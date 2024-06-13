@@ -1,4 +1,4 @@
-import { getCategories } from './mockedApi';
+import { Category } from './mockedApi';
 
 export interface CategoryListElement {
   name: string;
@@ -9,87 +9,77 @@ export interface CategoryListElement {
   showOnHome: boolean;
 }
 
-export const categoryTree = async (): Promise<CategoryListElement[]> => {
-  const res = await getCategories();
+interface CategoryTreeDependencies {
+  getCategories: () => Promise<{ data: Category[] }>;
+}
 
-  if (!res.data) {
+export const getCategoryOrder = (category: Category): number => {
+  const title = parseInt(category.Title);
+  return isNaN(title) ? category.id : title;
+};
+
+export const mapCategoryToListElement = (
+  category: Category
+): CategoryListElement => ({
+  id: category.id,
+  image: category.MetaTagDescription,
+  name: category.name,
+  order: getCategoryOrder(category),
+  children: mapCategoriesToSortedListElements(category.children),
+  showOnHome: false,
+});
+
+const mapCategoriesToSortedListElements = (
+  categories: Category[]
+): CategoryListElement[] =>
+  categories
+    .map((category) => mapCategoryToListElement(category))
+    .sort((catA, catB) => catA.order - catB.order);
+
+export const getShowOnHomeIds = (categories: Category[]): number[] =>
+  categories
+    .filter((category) => category.Title.includes('#'))
+    .map((category) => category.id);
+
+export const setShowOnHomeFlag = (
+  categories: CategoryListElement[],
+  showOnHomeIds: number[]
+) => {
+  if (categories.length < 5) {
+    return categories.map((category) => ({
+      ...category,
+      showOnHome: true,
+    }));
+  }
+
+  if (showOnHomeIds.length > 0) {
+    return categories.map((category) =>
+      showOnHomeIds.includes(category.id)
+        ? {
+            ...category,
+            showOnHome: true,
+          }
+        : category
+    );
+  }
+
+  return categories.map((category, idx) => ({
+    ...category,
+    showOnHome: idx < 3,
+  }));
+};
+
+export const categoryTree = async (
+  dependencies: CategoryTreeDependencies
+): Promise<CategoryListElement[]> => {
+  const { data } = await dependencies.getCategories();
+
+  if (!data) {
     return [];
   }
 
-  const toShowOnHome: number[] = [];
+  const result = mapCategoriesToSortedListElements(data);
+  const showOnHomeIds = getShowOnHomeIds(data);
 
-  const result = res.data.map((c1) => {
-    let order = c1.Title;
-    if (c1.Title && c1.Title.includes('#')) {
-      order = c1.Title.split('#')[0];
-      toShowOnHome.push(c1.id);
-    }
-
-    let orderL1 = parseInt(order);
-    if (isNaN(orderL1)) {
-      orderL1 = c1.id;
-    }
-    const l2Kids = c1.children
-      ? c1.children.map((c2) => {
-          let order2 = c1.Title;
-          if (c2.Title && c2.Title.includes('#')) {
-            order2 = c2.Title.split('#')[0];
-          }
-          let orderL2 = parseInt(order2);
-          if (isNaN(orderL2)) {
-            orderL2 = c2.id;
-          }
-          const l3Kids = c2.children
-            ? c2.children.map((c3) => {
-                let order3 = c1.Title;
-                if (c3.Title && c3.Title.includes('#')) {
-                  order3 = c3.Title.split('#')[0];
-                }
-                let orderL3 = parseInt(order3);
-                if (isNaN(orderL3)) {
-                  orderL3 = c3.id;
-                }
-                return {
-                  id: c3.id,
-                  image: c3.MetaTagDescription,
-                  name: c3.name,
-                  order: orderL3,
-                  children: [],
-                  showOnHome: false,
-                };
-              })
-            : [];
-          l3Kids.sort((a, b) => a.order - b.order);
-          return {
-            id: c2.id,
-            image: c2.MetaTagDescription,
-            name: c2.name,
-            order: orderL2,
-            children: l3Kids,
-            showOnHome: false,
-          };
-        })
-      : [];
-    l2Kids.sort((a, b) => a.order - b.order);
-    return {
-      id: c1.id,
-      image: c1.MetaTagDescription,
-      name: c1.name,
-      order: orderL1,
-      children: l2Kids,
-      showOnHome: false,
-    };
-  });
-
-  result.sort((a, b) => a.order - b.order);
-
-  if (result.length <= 5) {
-    result.forEach((a) => (a.showOnHome = true));
-  } else if (toShowOnHome.length > 0) {
-    result.forEach((x) => (x.showOnHome = toShowOnHome.includes(x.id)));
-  } else {
-    result.forEach((x, index) => (x.showOnHome = index < 3));
-  }
-
-  return result;
+  return setShowOnHomeFlag(result, showOnHomeIds);
 };
